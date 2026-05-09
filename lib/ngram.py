@@ -9,7 +9,7 @@ class Model:
         self.vocab: list[str] = []
         self.model: dict[Any, dict[str, int]] = {}
 
-    def get_next(self, history: list[str]=[], seed=None) -> Optional[str]:
+    def get_next(self, history: list[str]=[], seed=None) -> str:
         rng = random.Random()
         rng.seed(seed)
 
@@ -64,11 +64,16 @@ class Model:
     def train(self, data_paths: list[str]) -> None:
         texts = []
         for path in data_paths:
-            with open(path, "r") as f:
-                texts.append(f.read())
-                texts[-1] = "<START>" + texts[-1] + "</START>"
+            try:
+                with open(path, "r") as f:
+                    texts.append(f.read())
+                    texts[-1] = "<START>" + texts[-1] + "</START>"
+            except Exception as e:
+                print(e)
 
         self.create_bpe(texts)
+        self.vocab.append("<START>")
+        self.vocab.append("</START>")
 
         tokens: list[list[str]] = []
         for text in texts:
