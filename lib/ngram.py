@@ -4,7 +4,6 @@ from typing import Optional
 from tqdm import tqdm
 from itertools import pairwise
 import re
-from numba import njit
 
 class Model:
     def __init__(self, n: int=24, vocab_size: int=8096) -> None:
