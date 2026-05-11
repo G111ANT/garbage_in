@@ -6,13 +6,13 @@ import glob
 import random
 
 async def handler(request: web.Request):
-    start = """
+    start = f"""
     <!DOCTYPE html>
     <html lang="en>
     <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-        <title>BIG information</title>
+        <title>{random.choice(ngram_model.vocab)}</title>
     </head>
 
     <body>
@@ -28,7 +28,6 @@ async def handler(request: web.Request):
     </html> 
     """
 
-    seed = hash(request.path)
     response = web.StreamResponse()
     response.content_type = "text/html"
     await response.prepare(request)
@@ -37,8 +36,10 @@ async def handler(request: web.Request):
 
     end_token = ngram_model.tokenize("</START>")[0]
     tokens = ngram_model.tokenize("<START>")
+    rng = random.Random()
+    rng.seed(hash(request.path))
     for i in range(100):
-        tokens.append(ngram_model.get_next(tokens, seed+i))
+        tokens.append(ngram_model.get_next(tokens, rng))
         if tokens[-1] == end_token:
             break
         await response.write(bytearray(tokens[-1], 'utf-8'))
@@ -47,7 +48,7 @@ async def handler(request: web.Request):
     await response.write(bytearray(end, 'utf-8'))
 
     await response.write_eof()
-    print(f"{request.path} -> {tokens}")
+    print(f"{request.path}\n{"".join(tokens).replace("\n", " ")}")
     return response
 
 if __name__ == "__main__":

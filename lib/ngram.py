@@ -1,19 +1,21 @@
 import random
-from collections import Counter
-from typing import Any
+from collections import Counter, defaultdict
+from typing import Optional
 from tqdm import tqdm
+from itertools import pairwise
+import re
+from numba import njit
 
 class Model:
     def __init__(self, n: int=24, vocab_size: int=8096) -> None:
         self.n = n
         self.vocab_size = vocab_size
         self.vocab: list[str] = []
-        self.model: dict[Any, dict[str, int]] = {}
+        self.model: dict[tuple[str, ...], dict[str, int]] = {}
+        self.start_token = "♍"
+        self.end_token = "♎"
 
-    def get_next(self, history: list[str]=[], seed=None) -> str:
-        rng = random.Random()
-        rng.seed(seed)
-
+    def get_next(self, history: list[str]=[], rng: Optional[random.Random] = None) -> str:
         gram = tuple(history[:-self.n])
 
         possible = self.vocab.copy()
@@ -27,92 +29,113 @@ class Model:
                     for text in self.model[gram_]:
                         possible.extend([text] * self.model[gram_][text] * 10)
 
-        return rng.choice(possible)
+        return rng.choice(possible) if rng else random.choice(possible)
 
     def tokenize(self, text: str) -> list[str]:
-        if len(self.vocab) == 0:
+        if not self.vocab:
             return [text]
         elif max(map(len, self.vocab)) == 1:
             return list(text)
 
         tokens = []
-        vocab = sorted(self.vocab, key=len, reverse=True)
-        while len(text) > 0:
-            for v in vocab:
-                if text.startswith(v):
-                    tokens.append(v)
-                    text = text[len(v):]
+        vocab_sorted = sorted(self.vocab, key=len, reverse=True)
+        with tqdm(total=len(text), desc="Tokenizing") as pbar:
+            idx = 0
+            lidx = idx
+            while text:
+                for v in vocab_sorted:
+                    if text[idx:].startswith(v):
+                        tokens.append(v)
+                        idx += (len_v := len(v))
+                        pbar.update(len_v)
+                        break
+                if idx == lidx:
                     break
-            else:
-                return tokens
+                lidx = idx
         return tokens
 
     def create_bpe(self, texts: list[str]) -> None:
         if len(self.vocab) == self.vocab_size:
             return
-        self.vocab = list(set("".join(texts)))
-        self.vocab += ["<START>", "</START>"]
+            
+        self.vocab = sorted(set("".join(texts)))
+        self.vocab += [self.start_token, self.end_token]
 
-        tokens = []
-        for text in texts:
-            tokens.append(self.tokenize(text))
+        tokens = [self.tokenize(t) for t in texts]
+        
+        if self.vocab_size - len(self.vocab) <= 0:
+            return
 
-        with tqdm(total=self.vocab_size - len(self.vocab)) as pbar:
+        with tqdm(total=self.vocab_size, desc="Building BPE", initial=len(self.vocab)) as pbar:
             while len(self.vocab) < self.vocab_size:
                 pairs = Counter()
-                for text in tokens:
-                    pairs.update(zip(text, text[1:]))
-
-                if len(pairs) == 0:
-                    return
-        
-                first, freq = pairs.most_common(1)[0]
-                del pairs
+                for seq in tokens:
+                    if len(seq) > 1:
+                        pairs.update(pairwise(seq))
+                        
+                if not pairs:
+                    break
+                
+                (first, second), freq = pairs.most_common(1)[0]
                 if freq < 2:
                     break
 
-                for t in range(len(tokens)):
+                new_token_seq = []
+                new_token = first + second
+                for seq in tokens:
+                    merged = []
                     i = 0
-                    while i < len(tokens[t]) - 1:
-                        if tokens[t][i] == first[0] and tokens[t][i + 1] == first[1]:
-                            tokens[t][i] = first[0] + first[1]
-                            tokens[t].pop(i + 1)
-                        i += 1
+                    while i < (len_seq := len(seq)):
+                        if (seq_i := seq[i]) == first and i + 1 < len_seq and seq[i+1] == second:
+                            merged.append(new_token)
+                            i += 2
+                        else:
+                            merged.append(seq_i)
+                            i += 1
+                    new_token_seq.append(merged)
+                tokens = new_token_seq
 
-                self.vocab.append(first[0] + first[1])
+                self.vocab.append(first + second)
                 pbar.update(1)
 
-        print("VOCAB")
-        print(self.vocab)
-        print("VOCAB")
-        return
+        print("VOCAB", self.vocab, "VOCAB")
+
+    def pre_process(self, text: str) -> str:
+        text = re.sub(r"\s+", " ", text, flags=re.MULTILINE)
+        text = ". ".join([t.capitalize() for t in text.split(". ")])
+        text.replace(self.start_token, "")
+        text.replace(self.end_token, "")
+        text = text.strip()
+        return text
 
     def train(self, data_paths: list[str]) -> None:
         texts = []
-        for path in data_paths:
-            try:
-                with open(path, "r") as f:
-                    texts.append(f.read())
-                    texts[-1] = "<START>" + texts[-1] + "</START>"
-            except Exception as e:
-                print(e)
+        with tqdm(total=len(data_paths), desc="Loading files") as pbar:
+            for path in data_paths:
+                try:
+                    with open(path, "r") as f:
+                        content = f.read().strip()
+                        if content:
+                            texts.append(self.start_token + self.pre_process(content) + self.end_token)
+                except Exception as e:
+                    print(f"Error reading {path}: {e}")
+                pbar.update(1)
 
         self.create_bpe(texts)
 
-        tokens: list[list[str]] = []
-        for text in texts:
-            tokens.append(self.tokenize(text))
-
+        tokens: list[list[str]] = [self.tokenize(t) for t in texts]
         del texts
 
-        for text in tokens:
-            for i in range(len(text) - self.n - 1):
-                gram = tuple(text[max(0, i - self.n):i])
-
-                if gram not in self.model:
-                    self.model[gram] = {}
-                self.model[gram][text[i + 1]] = self.model[gram].get(text[i + 1], 0) + 1
+        model = defaultdict(lambda: defaultdict(int))
         
-        del tokens
+        for seq in tokens:
+            for i in range(len(seq) - 1):
+                context_len = min(self.n, i)
+                if context_len == 0:
+                    continue
+                gram = tuple(seq[max(0, i - context_len + 1):i + 1])
+                next_token = seq[i + 1]
+                model[gram][next_token] += 1
 
-        return
+        self.model = {k: dict(v) for k, v in model.items()}
+        del tokens
