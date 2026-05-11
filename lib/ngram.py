@@ -4,6 +4,11 @@ from typing import Optional
 from tqdm import tqdm
 from itertools import pairwise
 import re
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
+
+def count_token_pairs(tokens: list[str]) -> Counter:
+    return Counter(pairwise(tokens))
 
 class Model:
     def __init__(self, n: int=24, vocab_size: int=8096) -> None:
@@ -38,7 +43,7 @@ class Model:
 
         tokens = []
         vocab_sorted = sorted(self.vocab, key=len, reverse=True)
-        with tqdm(total=len(text), desc="Tokenizing") as pbar:
+        with tqdm(total=len(text), desc="Tokenizing", dynamic_ncols=True) as pbar:
             idx = 0
             lidx = idx
             while text:
@@ -65,13 +70,13 @@ class Model:
         if self.vocab_size - len(self.vocab) <= 0:
             return
 
-        with tqdm(total=self.vocab_size, desc="Building BPE", initial=len(self.vocab)) as pbar:
+        with tqdm(total=self.vocab_size, desc="Building BPE", initial=len(self.vocab), dynamic_ncols=True) as pbar:
             while len(self.vocab) < self.vocab_size:
-                pairs = Counter()
-                for seq in tokens:
-                    if len(seq) > 1:
-                        pairs.update(pairwise(seq))
-                        
+                with ProcessPoolExecutor() as executor:
+                    results = list(executor.map(count_token_pairs, tokens))
+
+                pairs = sum(results, Counter())
+    
                 if not pairs:
                     break
                 
@@ -109,7 +114,7 @@ class Model:
 
     def train(self, data_paths: list[str]) -> None:
         texts = []
-        with tqdm(total=len(data_paths), desc="Loading files") as pbar:
+        with tqdm(total=len(data_paths), desc="Loading files", dynamic_ncols=True) as pbar:
             for path in data_paths:
                 try:
                     with open(path, "r") as f:

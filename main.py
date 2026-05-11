@@ -43,7 +43,7 @@ async def handler(request: web.Request):
         if tokens[-1] == end_token:
             break
         await response.write(bytearray(tokens[-1], 'utf-8'))
-        await asyncio.sleep(random.random() * 0.1)
+        await asyncio.sleep(random.random() * 2 * 0.1)
 
     await response.write(bytearray(end, 'utf-8'))
 
