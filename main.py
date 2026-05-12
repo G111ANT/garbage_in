@@ -34,13 +34,12 @@ async def handler(request: web.Request):
 
     await response.write(bytearray(start, 'utf-8'))
 
-    end_token = ngram_model.tokenize("</START>")[0]
-    tokens = ngram_model.tokenize("<START>")
+    tokens = ngram_model.tokenize(ngram_model.start_token)
     rng = random.Random()
     rng.seed(hash(request.path))
     for i in range(100):
         tokens.append(ngram_model.get_next(tokens, rng))
-        if tokens[-1] == end_token:
+        if tokens[-1] == ngram_model.start_token:
             break
         await response.write(bytearray(tokens[-1], 'utf-8'))
         await asyncio.sleep(random.random() * 2 * 0.1)
@@ -58,5 +57,8 @@ if __name__ == "__main__":
     ngram_model.train(list(glob.glob("data/*.*")))
 
     app = web.Application()
-    app.add_routes([web.get(r"/{key:.+}", handler)])
+    app.add_routes([
+        web.get("/", handler),
+        web.get(r"/{key:.+}", handler)
+    ])
     web.run_app(app)
