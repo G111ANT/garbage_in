@@ -86,6 +86,10 @@ class Model:
             if gram_i in self.model:
                 for text in self.model[gram_i]:
                     possible.extend([text] * self.model[gram_i][text] * w)
+            for gram_ in self.model:
+                if gram_i == gram_[-len(gram_i):]:
+                    for text in self.model[gram_]:
+                        possible.extend([text] * self.model[gram_][text] * w)
             if len(possible) > 0:
                 break
 
