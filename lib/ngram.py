@@ -93,6 +93,8 @@ class Model:
             if len(possible) > 0:
                 break
 
+        if len(possible) == 0:
+            print("Couldn't find any possible words for this gram. Using random instead.")
         possible += list(random.sample(self.vocab.copy(), self.vocab_size//1000))
         return rng.choice(possible) if rng else random.choice(possible)
 
